@@ -1513,27 +1513,12 @@ read_header(struct archive_read *a, struct archive_entry *entry,
    * consumed at the end.
    */
   if (head_type == NEWSUB_HEAD) {
-    size_t distance = p - (const char *)h;
     if (rar->packed_size > INT64_MAX - header_size) {
       archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
                         "Extended header size too large");
       return (ARCHIVE_FATAL);
     }
-    header_size += rar->packed_size;
-    if ((uintmax_t)header_size > SIZE_MAX) {
-      archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-                        "Unable to read extended header data");
-      return (ARCHIVE_FATAL);
-    }
-    /* Make sure we have the extended data. */
-    if ((h = __archive_read_ahead(a, (size_t)header_size - 7, NULL)) == NULL) {
-      archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-                        "Failed to read extended header data");
-      return (ARCHIVE_FATAL);
-    }
-    p = h;
-    endp = p + header_size - 7;
-    p += distance;
+    header_size_to_consume = header_size + rar->packed_size;
   }
 
   filename_size = archive_le16dec(file_header.name_size);
