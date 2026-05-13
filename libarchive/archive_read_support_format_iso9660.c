@@ -1086,7 +1086,7 @@ read_children(struct archive_read *a, struct file_info *parent)
 		p = b;
 		b += iso9660->logical_block_size;
 		step -= iso9660->logical_block_size;
-		for (; *p != 0 && p + DR_name_offset < b && p + *p <= b;
+		for (; p < b && *p != 0 && p + DR_name_offset < b && p + *p <= b;
 			p += *p) {
 			struct file_info *child;
 
@@ -2754,8 +2754,10 @@ static void
 parse_rockridge_ZF1(struct file_info *file, const unsigned char *data,
     int data_length)
 {
+    if (data_length != 12)
+        return;
 
-	if (data[0] == 0x70 && data[1] == 0x7a && data_length == 12) {
+    if (data[0] == 0x70 && data[1] == 0x7a) {
         /* paged zlib */
         file->pz = 1;
         file->pz_log2_bs = data[3];
