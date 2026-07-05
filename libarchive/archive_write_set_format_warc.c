@@ -108,6 +108,7 @@ static int _warc_free(struct archive_write *a);
 /* private routines */
 static ssize_t _popul_ehdr(struct archive_string *t, size_t z, warc_essential_hdr_t);
 static int _gen_uuid(warc_uuid_t *tgt);
+static int warc_target_uri_has_ctl(const char *);
 
 
 /*
@@ -179,6 +180,7 @@ _warc_header(struct archive_write *a, struct archive_entry *entry)
 {
 	struct warc_s *w = a->format_data;
 	struct archive_string hdr;
+	const char *pathname;
 #define MAX_HDR_SIZE 512
 
 	/* check whether warcinfo record needs outputting */
@@ -214,10 +216,16 @@ _warc_header(struct archive_write *a, struct archive_entry *entry)
 		archive_string_free(&hdr);
 	}
 
-	if (archive_entry_pathname(entry) == NULL) {
-		archive_set_error(&a->archive, EINVAL,
-		    "Invalid filename");
+	pathname = archive_entry_pathname(entry);
+	if (pathname == NULL) {
+		archive_set_error(&a->archive, EINVAL, "Invalid filename");
 		return (ARCHIVE_WARN);
+	}
+
+	if (warc_target_uri_has_ctl(pathname)) {
+		archive_set_error(&a->archive, EINVAL,
+		    "WARC target URI contains control character");
+		return (ARCHIVE_FAILED);
 	}
 
 	w->typ = archive_entry_filetype(entry);
@@ -234,7 +242,7 @@ _warc_header(struct archive_write *a, struct archive_entry *entry)
 		};
 		ssize_t r;
 		int64_t size;
-		rh.tgturi = archive_entry_pathname(entry);
+		rh.tgturi = pathname;
 		rh.rtime = w->now;
 		rh.mtime = archive_entry_mtime(entry);
 		if (!archive_entry_size_is_set(entry)) {
@@ -436,6 +444,18 @@ _popul_ehdr(struct archive_string *tgt, size_t tsz, warc_essential_hdr_t hdr)
 	archive_strncat(tgt, "\r\n", 2);
 
 	return (archive_strlen(tgt) >= tsz)? -1: (ssize_t)archive_strlen(tgt);
+}
+
+static int
+warc_target_uri_has_ctl(const char *p)
+{
+	for (; *p != '\0'; ++p) {
+		unsigned char c = (unsigned char)*p;
+
+		if (c < 0x20 || c == 0x7f)
+			return (1);
+	}
+	return (0);
 }
 
 static int
