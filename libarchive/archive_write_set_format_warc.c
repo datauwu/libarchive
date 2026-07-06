@@ -179,6 +179,7 @@ _warc_header(struct archive_write *a, struct archive_entry *entry)
 {
 	struct warc_s *w = a->format_data;
 	struct archive_string hdr;
+	int rc;
 #define MAX_HDR_SIZE 512
 
 	/* check whether warcinfo record needs outputting */
@@ -207,7 +208,11 @@ _warc_header(struct archive_write *a, struct archive_entry *entry)
 			archive_strncat(&hdr, "\r\n\r\n", 4);
 
 			/* write to output stream */
-			__archive_write_output(a, hdr.s, archive_strlen(&hdr));
+			rc = __archive_write_output(a, hdr.s, archive_strlen(&hdr));
+			if (rc != ARCHIVE_OK) {
+				archive_string_free(&hdr);
+				return (rc);
+			}
 		}
 		/* indicate we're done with file header writing */
 		w->omit_warcinfo = 1U;
@@ -262,7 +267,11 @@ _warc_header(struct archive_write *a, struct archive_entry *entry)
 			return (ARCHIVE_WARN);
 		}
 		/* otherwise append to output stream */
-		__archive_write_output(a, hdr.s, r);
+		rc = __archive_write_output(a, hdr.s, r);
+		if (rc != ARCHIVE_OK) {
+			archive_string_free(&hdr);
+			return (rc);
+		}
 		/* and let subsequent calls to _data() know about the size */
 		w->entry_bytes_remaining = rh.cntlen;
 		archive_string_free(&hdr);
