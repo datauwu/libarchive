@@ -169,3 +169,45 @@ DEFINE_TEST(test_write_format_warc_size)
 	assertEqualIntA(a, ARCHIVE_OK, archive_write_close(a));
 	assertEqualInt(ARCHIVE_OK, archive_write_free(a));
 }
+
+DEFINE_TEST(test_write_format_warc_header_errors)
+{
+	char tiny[1];
+	size_t used;
+	struct archive *a;
+	struct archive_entry *ae;
+
+	/* Write failure while emitting warcinfo should fail the header. */
+	assert((a = archive_write_new()) != NULL);
+	assertEqualIntA(a, ARCHIVE_OK, archive_write_set_format_warc(a));
+	assertEqualIntA(a, ARCHIVE_OK, archive_write_add_filter_none(a));
+	assertEqualIntA(a, ARCHIVE_OK, archive_write_set_bytes_per_block(a, 0));
+	assertEqualIntA(a, ARCHIVE_OK,
+	    archive_write_open_memory(a, tiny, sizeof(tiny), &used));
+
+	assert((ae = archive_entry_new()) != NULL);
+	archive_entry_set_pathname(ae, "test");
+	archive_entry_set_filetype(ae, AE_IFREG);
+	archive_entry_set_size(ae, 9);
+	assertEqualIntA(a, ARCHIVE_FATAL, archive_write_header(a, ae));
+	archive_entry_free(ae);
+	assertEqualInt(ARCHIVE_OK, archive_write_free(a));
+
+	/* Write failure while emitting a regular record should fail. */
+	assert((a = archive_write_new()) != NULL);
+	assertEqualIntA(a, ARCHIVE_OK, archive_write_set_format_warc(a));
+	assertEqualIntA(a, ARCHIVE_OK, archive_write_add_filter_none(a));
+	assertEqualIntA(a, ARCHIVE_OK, archive_write_set_options(a,
+	    "omit-warcinfo=true"));
+	assertEqualIntA(a, ARCHIVE_OK, archive_write_set_bytes_per_block(a, 0));
+	assertEqualIntA(a, ARCHIVE_OK,
+	    archive_write_open_memory(a, tiny, sizeof(tiny), &used));
+
+	assert((ae = archive_entry_new()) != NULL);
+	archive_entry_set_pathname(ae, "test");
+	archive_entry_set_filetype(ae, AE_IFREG);
+	archive_entry_set_size(ae, 9);
+	assertEqualIntA(a, ARCHIVE_FATAL, archive_write_header(a, ae));
+	archive_entry_free(ae);
+	assertEqualInt(ARCHIVE_OK, archive_write_free(a));
+}
