@@ -2809,6 +2809,13 @@ static int parse_tables(struct archive_read* a, struct rar5* rar,
 		 * Value 15 is a flag telling us that we need to unpack more
 		 * bytes. */
 		if(value == ESCAPE) {
+			if(i >= rar->cstate.cur_block_size) {
+				archive_set_error(&a->archive,
+				    ARCHIVE_ERRNO_FILE_FORMAT,
+				    "Truncated data in huffman tables");
+				return ARCHIVE_FAILED;
+			}
+
 			value = (p[i] & nibble_mask) >> nibble_shift;
 			if(nibble_mask == 0x0F)
 				++i;
