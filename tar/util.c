@@ -319,7 +319,7 @@ set_chdir(struct bsdtar *bsdtar, const char *newdir)
 		if (old_len > SIZE_MAX - newdir_len - 2)
 		    lafe_errc(1, errno, "Path too long");
 		bsdtar->pending_chdir = malloc(new_len);
-		if (old_pending[old_len - 1] == '/')
+		if (old_len > 0 && old_pending[old_len - 1] == '/')
 			old_pending[old_len - 1] = '\0';
 		if (bsdtar->pending_chdir != NULL)
 			snprintf(bsdtar->pending_chdir, new_len, "%s/%s",
