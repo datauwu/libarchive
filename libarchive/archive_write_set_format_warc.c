@@ -63,50 +63,51 @@ struct warc {
 	unsigned int omit_warcinfo:1;
 
 	time_t now;
-	mode_t typ;
+	mode_t filetype;
 	/* Remaining bytes to write for the current entry */
 	uint64_t entry_bytes_remaining;
 };
 
-static const char warcinfo[] =
+#define WARC_HEADER_MAX_SIZE 512
+
+static const char warcinfo_payload[] =
     "software: libarchive/" ARCHIVE_VERSION_ONLY_STRING "\r\n"
     "format: WARC file version 1.0\r\n";
 
-typedef enum {
-	WT_NONE,
+enum warc_type {
+	WARC_TYPE_NONE,
 	/* WARC info */
-	WT_INFO,
+	WARC_TYPE_INFO,
 	/* Metadata */
-	WT_META,
+	WARC_TYPE_METADATA,
 	/* Resource */
-	WT_RSRC,
+	WARC_TYPE_RESOURCE,
 	/* Request, unsupported */
-	WT_REQ,
+	WARC_TYPE_REQUEST,
 	/* Response, unsupported by this writer */
-	WT_RSP,
+	WARC_TYPE_RESPONSE,
 	/* Revisit, unsupported */
-	WT_RVIS,
+	WARC_TYPE_REVISIT,
 	/* Conversion, unsupported */
-	WT_CONV,
+	WARC_TYPE_CONVERSION,
 	/* Continuation, currently unsupported */
-	WT_CONT,
-	/* Invalid type */
-	LAST_WT
-} warc_type_t;
+	WARC_TYPE_CONTINUATION,
+	WARC_TYPE_LAST
+};
 
-typedef struct {
-	warc_type_t type;
-	const char *tgturi;
-	const char *recid;
-	time_t rtime;
-	time_t mtime;
-	const char *cnttyp;
-	uint64_t cntlen;
-} warc_essential_hdr_t;
+struct warc_header {
+	enum warc_type type;
+	const char *target_uri;
+	const char *record_id;
+	time_t record_time;
+	time_t modification_time;
+	const char *content_type;
+	uint64_t content_length;
+};
 
-typedef struct {
-	unsigned int u[4U];
-} warc_uuid_t;
+struct warc_uuid {
+	unsigned int value[4U];
+};
 
 static int	archive_write_warc_options(struct archive_write *,
 		    const char *, const char *);
@@ -118,8 +119,9 @@ static int	archive_write_warc_finish_entry(struct archive_write *);
 static int	archive_write_warc_close(struct archive_write *);
 static int	archive_write_warc_free(struct archive_write *);
 
-static ssize_t _popul_ehdr(struct archive_string *t, size_t z, warc_essential_hdr_t);
-static int _gen_uuid(warc_uuid_t *tgt);
+static ssize_t _popul_ehdr(struct archive_string *t, size_t z,
+    struct warc_header);
+static int _gen_uuid(struct warc_uuid *tgt);
 
 /*
  * Set output format to ISO 28500 (aka WARC) format.
@@ -147,7 +149,7 @@ archive_write_set_format_warc(struct archive *_a)
 	/* Use the current time for WARC-Date values. */
 	warc->now = time(NULL);
 	/* Reset file type information. */
-	warc->typ = 0;
+	warc->filetype = 0;
 
 	a->format_data = warc;
 	a->format_name = "WARC/1.0";
@@ -186,26 +188,25 @@ archive_write_warc_header(struct archive_write *a, struct archive_entry *entry)
 {
 	struct warc *warc = a->format_data;
 	struct archive_string hdr;
-#define MAX_HDR_SIZE 512
 
 	/* Emit the warcinfo record if needed. */
 	if (!warc->omit_warcinfo) {
 		ssize_t r;
 		int rc;
-		warc_essential_hdr_t wi = {
-			WT_INFO,
+		struct warc_header wi = {
+			WARC_TYPE_INFO,
 			/* URI */NULL,
 			/* Record ID */NULL,
 			/* Record time */0,
 			/* Modified time */0,
 			/* Content type */"application/warc-fields",
-			/* Content length */sizeof(warcinfo) - 1U,
+			/* Content length */sizeof(warcinfo_payload) - 1U,
 		};
-		wi.rtime = warc->now;
-		wi.mtime = warc->now;
+		wi.record_time = warc->now;
+		wi.modification_time = warc->now;
 
 		archive_string_init(&hdr);
-		r = _popul_ehdr(&hdr, MAX_HDR_SIZE, wi);
+		r = _popul_ehdr(&hdr, WARC_HEADER_MAX_SIZE, wi);
 		if (r < 0) {
 			archive_string_free(&hdr);
 			archive_set_error(&a->archive,
@@ -215,7 +216,7 @@ archive_write_warc_header(struct archive_write *a, struct archive_entry *entry)
 		}
 
 		/* Reuse the header buffer for the warcinfo payload. */
-		archive_strncat(&hdr, warcinfo, sizeof(warcinfo) -1);
+		archive_strncat(&hdr, warcinfo_payload, sizeof(warcinfo_payload) - 1U);
 
 		/* Append the end-of-record indicator. */
 		archive_strncat(&hdr, "\r\n\r\n", 4);
@@ -238,11 +239,11 @@ archive_write_warc_header(struct archive_write *a, struct archive_entry *entry)
 		return (ARCHIVE_WARN);
 	}
 
-	warc->typ = archive_entry_filetype(entry);
+	warc->filetype = archive_entry_filetype(entry);
 	warc->entry_bytes_remaining = 0U;
-	if (warc->typ == AE_IFREG) {
-		warc_essential_hdr_t rh = {
-			WT_RSRC,
+	if (warc->filetype == AE_IFREG) {
+		struct warc_header rh = {
+			WARC_TYPE_RESOURCE,
 			/* URI */NULL,
 			/* Record ID */NULL,
 			/* Record time */0,
@@ -253,9 +254,9 @@ archive_write_warc_header(struct archive_write *a, struct archive_entry *entry)
 		ssize_t r;
 		int rc;
 		int64_t size;
-		rh.tgturi = archive_entry_pathname(entry);
-		rh.rtime = warc->now;
-		rh.mtime = archive_entry_mtime(entry);
+		rh.target_uri = archive_entry_pathname(entry);
+		rh.record_time = warc->now;
+		rh.modification_time = archive_entry_mtime(entry);
 		if (!archive_entry_size_is_set(entry)) {
 			archive_set_error(&a->archive, -1,
 			    "Size required");
@@ -267,10 +268,10 @@ archive_write_warc_header(struct archive_write *a, struct archive_entry *entry)
 			    "Size required");
 			return (ARCHIVE_FAILED);
 		}
-		rh.cntlen = (uint64_t)size;
+		rh.content_length = (uint64_t)size;
 
 		archive_string_init(&hdr);
-		r = _popul_ehdr(&hdr, MAX_HDR_SIZE, rh);
+		r = _popul_ehdr(&hdr, WARC_HEADER_MAX_SIZE, rh);
 		if (r < 0) {
 			/* Header generation failed. */
 			archive_string_free(&hdr);
@@ -287,7 +288,7 @@ archive_write_warc_header(struct archive_write *a, struct archive_entry *entry)
 			return (rc);
 		}
 		/* Save the remaining size for subsequent _data() calls. */
-		warc->entry_bytes_remaining = rh.cntlen;
+		warc->entry_bytes_remaining = rh.content_length;
 		archive_string_free(&hdr);
 		return (ARCHIVE_OK);
 	}
@@ -302,7 +303,7 @@ archive_write_warc_data(struct archive_write *a, const void *buf, size_t len)
 {
 	struct warc *warc = a->format_data;
 
-	if (warc->typ == AE_IFREG) {
+	if (warc->filetype == AE_IFREG) {
 		int rc;
 
 		/* Never write more bytes than announced. */
@@ -326,7 +327,7 @@ archive_write_warc_finish_entry(struct archive_write *a)
 	static const char _eor[] = "\r\n\r\n";
 	struct warc *warc = a->format_data;
 
-	if (warc->typ == AE_IFREG) {
+	if (warc->filetype == AE_IFREG) {
 		int rc;
 
 		if (warc->entry_bytes_remaining != 0U) {
@@ -341,7 +342,7 @@ archive_write_warc_finish_entry(struct archive_write *a)
 		}
 	}
 	/* reset type info */
-	warc->typ = 0;
+	warc->filetype = 0;
 	return (ARCHIVE_OK);
 }
 
@@ -388,15 +389,15 @@ xstrftime(struct archive_string *as, const char *fmt, time_t t)
 }
 
 static ssize_t
-_popul_ehdr(struct archive_string *tgt, size_t tsz, warc_essential_hdr_t hdr)
+_popul_ehdr(struct archive_string *tgt, size_t tsz, struct warc_header hdr)
 {
 	static const char _ver[] = "WARC/1.0\r\n";
-	static const char * const _typ[LAST_WT] = {
+	static const char * const _typ[WARC_TYPE_LAST] = {
 		NULL, "warcinfo", "metadata", "resource", NULL
 	};
 	char std_uuid[48U];
 
-	if (hdr.type == WT_NONE || hdr.type > WT_RSRC) {
+	if (hdr.type == WARC_TYPE_NONE || hdr.type > WARC_TYPE_RESOURCE) {
 		/* Invalid record type for this writer. */
 		return -1;
 	}
@@ -405,12 +406,12 @@ _popul_ehdr(struct archive_string *tgt, size_t tsz, warc_essential_hdr_t hdr)
 
 	archive_string_sprintf(tgt, "WARC-Type: %s\r\n", _typ[hdr.type]);
 
-	if (hdr.tgturi != NULL) {
+	if (hdr.target_uri != NULL) {
 		/* Check whether the value already contains ://. */
 		static const char _uri[] = "";
 		static const char _fil[] = "file://";
 		const char *u;
-		const char *chk = strchr(hdr.tgturi, ':');
+		const char *chk = strchr(hdr.target_uri, ':');
 
 		if (chk != NULL && chk[1U] == '/' && chk[2U] == '/') {
 			/* Already has a scheme-style :// prefix. */
@@ -420,18 +421,18 @@ _popul_ehdr(struct archive_string *tgt, size_t tsz, warc_essential_hdr_t hdr)
 			u = _fil;
 		}
 		archive_string_sprintf(tgt,
-			"WARC-Target-URI: %s%s\r\n", u, hdr.tgturi);
+			"WARC-Target-URI: %s%s\r\n", u, hdr.target_uri);
 	}
 
-	/* Write WARC-Date from hdr.rtime. */
-	xstrftime(tgt, "WARC-Date: %Y-%m-%dT%H:%M:%SZ\r\n", hdr.rtime);
+	/* Write WARC-Date from hdr.record_time. */
+	xstrftime(tgt, "WARC-Date: %Y-%m-%dT%H:%M:%SZ\r\n", hdr.record_time);
 
-	/* Also write Last-Modified from hdr.mtime. */
-	xstrftime(tgt, "Last-Modified: %Y-%m-%dT%H:%M:%SZ\r\n", hdr.mtime);
+	/* Also write Last-Modified from hdr.modification_time. */
+	xstrftime(tgt, "Last-Modified: %Y-%m-%dT%H:%M:%SZ\r\n", hdr.modification_time);
 
-	if (hdr.recid == NULL) {
+	if (hdr.record_id == NULL) {
 		/* Generate a record ID when one was not provided. */
-		warc_uuid_t u;
+		struct warc_uuid u;
 
 		_gen_uuid(&u);
 		/* archive_string_sprintf() does not support minimum field widths, so
@@ -442,22 +443,22 @@ _popul_ehdr(struct archive_string *tgt, size_t tsz, warc_essential_hdr_t hdr)
 		snprintf(
 			std_uuid, sizeof(std_uuid),
 			"<urn:uuid:%08x-%04x-%04x-%04x-%04x%08x>",
-			u.u[0U],
-			u.u[1U] >> 16U, u.u[1U] & 0xffffU,
-			u.u[2U] >> 16U, u.u[2U] & 0xffffU,
-			u.u[3U]);
-		hdr.recid = std_uuid;
+			u.value[0U],
+			u.value[1U] >> 16U, u.value[1U] & 0xffffU,
+			u.value[2U] >> 16U, u.value[2U] & 0xffffU,
+			u.value[3U]);
+		hdr.record_id = std_uuid;
 	}
 
 	/* WARC-Record-ID is mandatory. */
-	archive_string_sprintf(tgt, "WARC-Record-ID: %s\r\n", hdr.recid);
+	archive_string_sprintf(tgt, "WARC-Record-ID: %s\r\n", hdr.record_id);
 
-	if (hdr.cnttyp != NULL) {
-		archive_string_sprintf(tgt, "Content-Type: %s\r\n", hdr.cnttyp);
+	if (hdr.content_type != NULL) {
+		archive_string_sprintf(tgt, "Content-Type: %s\r\n", hdr.content_type);
 	}
 
 	/* Content-Length is mandatory. */
-	archive_string_sprintf(tgt, "Content-Length: %ju\r\n", (uintmax_t)hdr.cntlen);
+	archive_string_sprintf(tgt, "Content-Length: %ju\r\n", (uintmax_t)hdr.content_length);
 	/* End of header. */
 	archive_strncat(tgt, "\r\n", 2);
 
@@ -465,13 +466,13 @@ _popul_ehdr(struct archive_string *tgt, size_t tsz, warc_essential_hdr_t hdr)
 }
 
 static int
-_gen_uuid(warc_uuid_t *tgt)
+_gen_uuid(struct warc_uuid *tgt)
 {
-	archive_random(tgt->u, sizeof(tgt->u));
+	archive_random(tgt->value, sizeof(tgt->value));
 	/* Apply UUID version 4 rules. */
-	tgt->u[1U] &= 0xffff0fffU;
-	tgt->u[1U] |= 0x4000U;
-	tgt->u[2U] &= 0x3fffffffU;
-	tgt->u[2U] |= 0x80000000U;
+	tgt->value[1U] &= 0xffff0fffU;
+	tgt->value[1U] |= 0x4000U;
+	tgt->value[2U] &= 0x3fffffffU;
+	tgt->value[2U] |= 0x80000000U;
 	return 0;
 }
