@@ -108,18 +108,19 @@ typedef struct {
 	unsigned int u[4U];
 } warc_uuid_t;
 
-static int _warc_options(struct archive_write*, const char *key, const char *v);
-static int _warc_header(struct archive_write *a, struct archive_entry *entry);
-static ssize_t _warc_data(struct archive_write *a, const void *buf, size_t sz);
-static int _warc_finish_entry(struct archive_write *a);
-static int _warc_close(struct archive_write *a);
-static int _warc_free(struct archive_write *a);
+static int	archive_write_warc_options(struct archive_write *,
+		    const char *, const char *);
+static int	archive_write_warc_header(struct archive_write *,
+		    struct archive_entry *);
+static ssize_t	archive_write_warc_data(struct archive_write *, const void *,
+		    size_t);
+static int	archive_write_warc_finish_entry(struct archive_write *);
+static int	archive_write_warc_close(struct archive_write *);
+static int	archive_write_warc_free(struct archive_write *);
 
-/* Private routines */
 static ssize_t _popul_ehdr(struct archive_string *t, size_t z, warc_essential_hdr_t);
 static int _gen_uuid(warc_uuid_t *tgt);
 
-
 /*
  * Set output format to ISO 28500 (aka WARC) format.
  */
@@ -150,21 +151,20 @@ archive_write_set_format_warc(struct archive *_a)
 
 	a->format_data = warc;
 	a->format_name = "WARC/1.0";
-	a->format_options = _warc_options;
-	a->format_write_header = _warc_header;
-	a->format_write_data = _warc_data;
-	a->format_close = _warc_close;
-	a->format_free = _warc_free;
-	a->format_finish_entry = _warc_finish_entry;
+	a->format_options = archive_write_warc_options;
+	a->format_write_header = archive_write_warc_header;
+	a->format_write_data = archive_write_warc_data;
+	a->format_close = archive_write_warc_close;
+	a->format_free = archive_write_warc_free;
+	a->format_finish_entry = archive_write_warc_finish_entry;
 	a->archive.archive_format = ARCHIVE_FORMAT_WARC;
 	a->archive.archive_format_name = "WARC/1.0";
 	return (ARCHIVE_OK);
 }
 
-
-/* Archive methods */
 static int
-_warc_options(struct archive_write *a, const char *key, const char *val)
+archive_write_warc_options(struct archive_write *a, const char *key,
+    const char *val)
 {
 	struct warc *warc = a->format_data;
 
@@ -182,7 +182,7 @@ _warc_options(struct archive_write *a, const char *key, const char *val)
 }
 
 static int
-_warc_header(struct archive_write *a, struct archive_entry *entry)
+archive_write_warc_header(struct archive_write *a, struct archive_entry *entry)
 {
 	struct warc *warc = a->format_data;
 	struct archive_string hdr;
@@ -298,7 +298,7 @@ _warc_header(struct archive_write *a, struct archive_entry *entry)
 }
 
 static ssize_t
-_warc_data(struct archive_write *a, const void *buf, size_t len)
+archive_write_warc_data(struct archive_write *a, const void *buf, size_t len)
 {
 	struct warc *warc = a->format_data;
 
@@ -321,7 +321,7 @@ _warc_data(struct archive_write *a, const void *buf, size_t len)
 }
 
 static int
-_warc_finish_entry(struct archive_write *a)
+archive_write_warc_finish_entry(struct archive_write *a)
 {
 	static const char _eor[] = "\r\n\r\n";
 	struct warc *warc = a->format_data;
@@ -346,14 +346,14 @@ _warc_finish_entry(struct archive_write *a)
 }
 
 static int
-_warc_close(struct archive_write *a)
+archive_write_warc_close(struct archive_write *a)
 {
 	(void)a; /* UNUSED */
 	return (ARCHIVE_OK);
 }
 
 static int
-_warc_free(struct archive_write *a)
+archive_write_warc_free(struct archive_write *a)
 {
 	struct warc *warc = a->format_data;
 
@@ -362,8 +362,6 @@ _warc_free(struct archive_write *a)
 	return (ARCHIVE_OK);
 }
 
-
-/* Private routines */
 static void
 xstrftime(struct archive_string *as, const char *fmt, time_t t)
 {
