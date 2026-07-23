@@ -119,9 +119,10 @@ static int	archive_write_warc_finish_entry(struct archive_write *);
 static int	archive_write_warc_close(struct archive_write *);
 static int	archive_write_warc_free(struct archive_write *);
 
-static ssize_t _popul_ehdr(struct archive_string *t, size_t z,
-    struct warc_header);
-static int _gen_uuid(struct warc_uuid *tgt);
+static void	warc_format_time(struct archive_string *, const char *, time_t);
+static ssize_t	warc_populate_header(struct archive_string *, size_t,
+		    struct warc_header);
+static void	warc_generate_uuid(struct warc_uuid *);
 
 /*
  * Set output format to ISO 28500 (aka WARC) format.
@@ -206,7 +207,7 @@ archive_write_warc_header(struct archive_write *a, struct archive_entry *entry)
 		wi.modification_time = warc->now;
 
 		archive_string_init(&hdr);
-		r = _popul_ehdr(&hdr, WARC_HEADER_MAX_SIZE, wi);
+		r = warc_populate_header(&hdr, WARC_HEADER_MAX_SIZE, wi);
 		if (r < 0) {
 			archive_string_free(&hdr);
 			archive_set_error(&a->archive,
@@ -271,7 +272,7 @@ archive_write_warc_header(struct archive_write *a, struct archive_entry *entry)
 		rh.content_length = (uint64_t)size;
 
 		archive_string_init(&hdr);
-		r = _popul_ehdr(&hdr, WARC_HEADER_MAX_SIZE, rh);
+		r = warc_populate_header(&hdr, WARC_HEADER_MAX_SIZE, rh);
 		if (r < 0) {
 			/* Header generation failed. */
 			archive_string_free(&hdr);
@@ -364,7 +365,7 @@ archive_write_warc_free(struct archive_write *a)
 }
 
 static void
-xstrftime(struct archive_string *as, const char *fmt, time_t t)
+warc_format_time(struct archive_string *as, const char *fmt, time_t t)
 {
 /* Like strftime(3), but for time_t objects. */
 	struct tm *rt;
@@ -389,7 +390,8 @@ xstrftime(struct archive_string *as, const char *fmt, time_t t)
 }
 
 static ssize_t
-_popul_ehdr(struct archive_string *tgt, size_t tsz, struct warc_header hdr)
+warc_populate_header(struct archive_string *tgt, size_t tsz,
+    struct warc_header hdr)
 {
 	static const char _ver[] = "WARC/1.0\r\n";
 	static const char * const _typ[WARC_TYPE_LAST] = {
@@ -425,16 +427,18 @@ _popul_ehdr(struct archive_string *tgt, size_t tsz, struct warc_header hdr)
 	}
 
 	/* Write WARC-Date from hdr.record_time. */
-	xstrftime(tgt, "WARC-Date: %Y-%m-%dT%H:%M:%SZ\r\n", hdr.record_time);
+	warc_format_time(tgt, "WARC-Date: %Y-%m-%dT%H:%M:%SZ\r\n",
+	    hdr.record_time);
 
 	/* Also write Last-Modified from hdr.modification_time. */
-	xstrftime(tgt, "Last-Modified: %Y-%m-%dT%H:%M:%SZ\r\n", hdr.modification_time);
+	warc_format_time(tgt, "Last-Modified: %Y-%m-%dT%H:%M:%SZ\r\n",
+	    hdr.modification_time);
 
 	if (hdr.record_id == NULL) {
 		/* Generate a record ID when one was not provided. */
 		struct warc_uuid u;
 
-		_gen_uuid(&u);
+		warc_generate_uuid(&u);
 		/* archive_string_sprintf() does not support minimum field widths, so
 		 * use snprintf() for UUID formatting. */
 #if defined(_WIN32) && !defined(__CYGWIN__) && !( defined(_MSC_VER) && _MSC_VER >= 1900)
@@ -465,8 +469,8 @@ _popul_ehdr(struct archive_string *tgt, size_t tsz, struct warc_header hdr)
 	return (archive_strlen(tgt) >= tsz)? -1: (ssize_t)archive_strlen(tgt);
 }
 
-static int
-_gen_uuid(struct warc_uuid *tgt)
+static void
+warc_generate_uuid(struct warc_uuid *tgt)
 {
 	archive_random(tgt->value, sizeof(tgt->value));
 	/* Apply UUID version 4 rules. */
@@ -474,5 +478,4 @@ _gen_uuid(struct warc_uuid *tgt)
 	tgt->value[1U] |= 0x4000U;
 	tgt->value[2U] &= 0x3fffffffU;
 	tgt->value[2U] |= 0x80000000U;
-	return 0;
 }
