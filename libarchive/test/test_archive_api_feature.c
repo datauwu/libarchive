@@ -50,4 +50,13 @@ DEFINE_TEST(test_archive_api_feature)
 		failure("Version string is: %s", archive_version_string());
 		assert(*p == '\0');
 	}
+
+#if HAVE_LIBPCRE2POSIX && HAVE_PCRE2POSIX_H
+	p = archive_libpcre2_version();
+	assert(p != NULL);
+	if (p != NULL) {
+		snprintf(buff, sizeof(buff), " libpcre2/%s", p);
+		assert(strstr(archive_version_details(), buff) != NULL);
+	}
+#endif
 }
