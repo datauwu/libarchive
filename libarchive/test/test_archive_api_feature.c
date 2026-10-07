@@ -51,7 +51,7 @@ DEFINE_TEST(test_archive_api_feature)
 		assert(*p == '\0');
 	}
 
-#if HAVE_LIBPCRE2POSIX && HAVE_PCRE2POSIX_H
+#if HAVE_LIBPCRE2POSIX && HAVE_PCRE2_H
 	p = archive_libpcre2_version();
 	assert(p != NULL);
 	if (p != NULL) {

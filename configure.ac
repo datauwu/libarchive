@@ -698,13 +698,17 @@ if test -z $posix_regex_lib_found && (test "$enable_posix_regex_lib" = "auto" ||
 fi
 if test -z $posix_regex_lib_found && (test "$enable_posix_regex_lib" = "auto" || test "$enable_posix_regex_lib" = "libpcre2posix"); then
   AC_CHECK_HEADERS([pcre2posix.h])
-  AC_CHECK_LIB(pcre2-posix,regcomp)
-  if test "x$ac_cv_lib_pcre2posix_regcomp" != xyes; then
+  AC_CHECK_HEADERS([pcre2.h], [], [],
+    [[#define PCRE2_CODE_UNIT_WIDTH 0]])
+  AC_CHECK_LIB(pcre2-posix,pcre2_regcomp)
+  if test "x$ac_cv_lib_pcre2_posix_pcre2_regcomp" != xyes; then
     AC_MSG_NOTICE(trying libpcre2posix check again with libpcre2-8)
-	unset ac_cv_lib_pcre2posix_regcomp
-	AC_CHECK_LIB(pcre2,pcre2_regexec)
-    AC_CHECK_LIB(pcre2-posix,pcre2_regcomp)
-    if test "x$ac_cv_lib_pcre2_pcre_exec" = xyes && test "x$ac_cv_lib_pcre2posix_regcomp" = xyes; then
+    AC_CHECK_LIB(pcre2-8,pcre2_compile_8)
+    if test "x$ac_cv_lib_pcre2_8_pcre2_compile_8" = xyes; then
+      unset ac_cv_lib_pcre2_posix_pcre2_regcomp
+      AC_CHECK_LIB(pcre2-posix,pcre2_regcomp)
+    fi
+    if test "x$ac_cv_lib_pcre2_posix_pcre2_regcomp" = xyes; then
       AC_MSG_CHECKING(if PCRE2_STATIC needs to be defined)
       AC_LINK_IFELSE(
         [AC_LANG_SOURCE(#include <pcre2posix.h>
@@ -723,10 +727,13 @@ if test -z $posix_regex_lib_found && (test "$enable_posix_regex_lib" = "auto" ||
       elif test "x$without_pcre2_static" = xyes || test "x$with_pcre2_static" = xyes; then
         AC_MSG_RESULT(no)
       fi
-      posix_regex_lib_found=1
     fi
-  else
+  fi
+  if test "x$ac_cv_lib_pcre2_posix_pcre2_regcomp" = xyes &&
+      test "x$ac_cv_header_pcre2posix_h" = xyes; then
     posix_regex_lib_found=1
+    AC_DEFINE([HAVE_LIBPCRE2POSIX], [1],
+      [Define to 1 if you have the libpcre2-posix library.])
   fi
 fi
 

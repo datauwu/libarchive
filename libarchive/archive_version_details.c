@@ -76,6 +76,8 @@
 #include <pcre.h>
 #endif
 #if HAVE_PCRE2_H
+/* Only version macros are used; 0 avoids selecting a code unit width. */
+#define PCRE2_CODE_UNIT_WIDTH 0
 #include <pcre2.h>
 #endif
 
